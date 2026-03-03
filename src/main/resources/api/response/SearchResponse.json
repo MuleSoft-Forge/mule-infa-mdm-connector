@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://informatica.com/b360/search-response.json",
+  "title": "Business 360 Search API Response",
+  "description": "Response body from POST /search/public/api/v1/search. Contains search result records and pagination metadata. These fields are also exposed as operation attributes (hits, pageSize, pageOffset, recordsToReturn, recordOffset, maxRecords).",
+  "type": "object",
+  "properties": {
+    "hits": { "type": "integer", "description": "Total number of records matching the search." },
+    "pageSize": { "type": "integer", "description": "Number of results per page." },
+    "pageOffset": { "type": "integer", "description": "Number of pages skipped." },
+    "recordsToReturn": { "type": "integer", "description": "Number of records requested for this page." },
+    "recordOffset": { "type": "integer", "description": "Number of records skipped." },
+    "maxRecords": { "type": "integer", "description": "Maximum records allowed per request (e.g. 10000)." },
+    "searchResult": {
+      "type": "object",
+      "description": "Search result wrapper (B360 typical structure).",
+      "properties": {
+        "records": {
+          "type": "array",
+          "description": "List of matching business entity records. Fields depend on entity type.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Single record; structure varies by business entity (e.g. Person, Item, Organization)."
+          }
+        },
+        "totalCount": {
+          "type": "integer",
+          "description": "Total number of records matching the search (if present)."
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "description": "Alternative top-level records array when searchResult is not used.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  }
+}

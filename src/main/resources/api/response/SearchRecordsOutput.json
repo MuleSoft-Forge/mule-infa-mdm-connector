@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://informatica.com/b360/search-records-output.json",
+  "title": "Search Records Output",
+  "description": "Payload of the Search operation: the records array from the B360 Search API response (searchResult.records). Pagination metadata is in operation attributes (hits, pageSize, pageOffset, recordsToReturn, recordOffset, maxRecords).",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": true,
+    "description": "Single business entity record; structure varies by entity type (e.g. Person, Item, Organization)."
+  }
+}

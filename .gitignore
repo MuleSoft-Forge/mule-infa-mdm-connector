@@ -1,0 +1,41 @@
+# Local / no-git content
+noGit/
+
+# Maven
+target/
+
+# Eclipse files
+.classpath
+.project
+.settings
+/workspace/
+
+# IntelliJ Idea files
+*.iml
+*.ipr
+*.iws
+*.idea
+
+# Mac
+.DS_Store
+
+# Test remnants
+objectstore/
+.mule/
+*.log
+temp/
+muleEmbeddedDB/
+activemq-data/
+testdir/
+hostkey.ser
+*.h2.db
+*.factorypath
+
+# Stale Eclipse/Studio workspace copy
+bin/
+
+# VS Code
+.vscode/
+
+# Cursor
+.cursor/

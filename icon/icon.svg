@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45">
+  <defs>
+    <style>
+      .cls-1 {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .cls-1, .cls-2, .cls-3 {
+        fill: none;
+      }
+
+      .cls-1, .cls-3 {
+        stroke: #3db0c7;
+      }
+
+      .cls-2 {
+        stroke: #f26a21;
+      }
+
+      .cls-2, .cls-3 {
+        stroke-miterlimit: 10;
+      }
+
+      /* INFA logo fills */
+      .infa-shp0 { fill: #ff4d00 }
+      .infa-shp1 { fill: #ff7d00 }
+      .infa-shp2 { fill: #001aff }
+      .infa-shp3 { fill: #e23400 }
+    </style>
+    <clipPath id="squareClip" transform="translate(-.5 17.51) rotate(-45)">
+      <rect x="14.79" y="3.26" width="12.2" height="12.2" rx=".65" ry=".65"/>
+    </clipPath>
+  </defs>
+  <!-- INFA logo inside top square (rotated to sit upright in the diamond) -->
+  <g clip-path="url(#squareClip)">
+    <g transform="translate(-.5 17.51) rotate(-45) translate(20.89 9.36) rotate(45) scale(0.00806) translate(-746.5 -757)">
+      <path class="infa-shp0" d="M827.74 776.46L1011.72 807.24L1136.39 941.82L1119.65 1135.3L670.62 880.82L827.74 776.46Z" />
+      <path class="infa-shp1" d="M1492.85 757.06L1119.65 1135.31L746.41 0.62L1492.85 757.06Z" />
+      <path class="infa-shp2" d="M1244.18 757.09L670.64 880.83L686.37 601.61L1244.18 757.09Z" />
+      <path class="infa-shp3" d="M0.01 757.11L276.54 818.94L459.42 939.22L472.78 1060.26L398.54 1161L0.01 757.11Z" />
+      <path class="infa-shp0" d="M706.06 41.58L459.41 939.2L0 757.1L706.06 41.58Z" />
+      <path class="infa-shp1" d="M459.42 939.22L1073.31 1182.32L746.41 1513.58L398.54 1161L459.42 939.22Z" />
+    </g>
+  </g>
+  <line class="cls-3" x1="34.33" y1="23.25" x2="25.07" y2="13.99"/>
+  <path class="cls-2" d="M37.7,27.84l2.06-2.06c.25-.25.25-.67,0-.92l-2.81-2.81c-.25-.25-.67-.25-.92,0l-2.81,2.81c-.25.25-.35.58-.21.71s.32.25.4.24h.08"/>
+  <rect class="cls-3" x="14.79" y="3.26" width="12.2" height="12.2" rx=".65" ry=".65" transform="translate(-.5 17.51) rotate(-45)"/>
+  <line class="cls-3" x1="20.89" y1="17.53" x2="20.89" y2="33"/>
+  <line class="cls-3" x1="7.79" y1="23.32" x2="17.05" y2="14.06"/>
+  <line class="cls-3" x1="14.87" y1="30.96" x2="20.92" y2="24.91"/>
+  <line class="cls-3" x1="25.05" y1="29.04" x2="20.92" y2="24.91"/>
+  <rect class="cls-2" x="3.33" y="22.69" width="5.28" height="5.28" rx=".65" ry=".65" transform="translate(-16.16 11.64) rotate(-45)"/>
+  <rect class="cls-2" x="10.45" y="30.1" width="5.28" height="5.28" rx=".65" ry=".65" transform="translate(-19.32 18.84) rotate(-45)"/>
+  <path class="cls-2" d="M20.32,37.38l-2.7,2.7c-.25.25-.25.67,0,.92l2.81,2.81c.25.25.67.25.92,0l2.81-2.81c.25-.25.26-.66.02-.9l-.44-.44"/>
+  <path class="cls-1" d="M38.44,39.67c2.23,0,4.05-1.81,4.05-4.05,0-2.23-1.81-4.05-4.05-4.05h-.01c.08-.33.12-.67.12-1.01,0-2.63-2.3-4.76-5.15-4.76-1.95,0-3.65,1-4.52,2.48l-.06.1c-.43-.19-.9-.29-1.4-.29-1.92,0-3.46,1.56-3.46,3.48-2.23,0-4.05,1.81-4.05,4.05s1.81,4.05,4.05,4.05h14.48Z"/>
+</svg>
