@@ -6,6 +6,13 @@
 
 **Connector behavior:** This connector does not store the session ID in Object Store; the session is held in the connection instance and is refreshed when the connection is re-established. The connector does not call the logout resource; sessions end when the connection is disposed or when they expire on the server (e.g. after 30 minutes of inactivity).
 
+**This connector supports two connection providers:**
+
+| Provider | Alias | Description |
+| -------- | ----- | ----------- |
+| **Basic Auth Connection Provider** | `basic` | Performs login via `/saas/public/core/v3/login` with username/password. The connector manages the full session lifecycle (login, session refresh, base URL derivation). |
+| **Passthrough Auth Connection Provider** | `passthrough` | Accepts a pre-obtained session ID and B360 MDM base URL at runtime. The connector does **not** manage login, refresh, or logout — the caller is fully responsible for obtaining and managing the token. |
+
 ---
 
 ## Login
@@ -167,6 +174,76 @@ The **Business 360 REST API** documentation adds product-specific details that a
   This connector performs this modification automatically after login.  
   See [Authentication method – Modifying the baseApiUrl](https://onlinehelp.informatica.com/IICS/prod/b360/en/index.htm#page/wz-b360-rest-api/Authentication_method.html).
 - **Session expiry:** The session ID expires after 30 minutes of inactivity; log in again to continue.
+
+---
+
+## Passthrough Auth Connection Provider
+
+The **Passthrough Auth Connection Provider** (`passthrough`) is designed for scenarios where the Mule application (or an upstream system) has already obtained a valid session ID and knows the B360 MDM base API URL. The connector simply passes the token through to every request — it does **not** call the login API, refresh tokens, or log out.
+
+### When to use Passthrough
+
+- **API-led architecture:** A System API or Process API has already authenticated with Informatica and passes the session ID downstream via headers or variables.
+- **External token management:** An OAuth/SAML flow or a shared secret vault provides the IDS-SESSION-ID outside of the connector.
+- **Testing and development:** You have a session ID from a manual login (e.g. via Postman) and want to use it directly.
+
+### Configuration parameters
+
+| Parameter | Required | Expression support | Description |
+| --------- | -------- | ------------------ | ----------- |
+| **Session ID** | Yes | `SUPPORTED` — accepts DataWeave (e.g. `#[vars.sessionId]`) | The `IDS-SESSION-ID` value to send with every request. Masked in Studio and logs. |
+| **B360 MDM Base API URL** | Yes | `SUPPORTED` — accepts DataWeave (e.g. `#[vars.b360BaseUrl]`) | The B360 MDM REST API base URL, already in MDM form (e.g. `https://use4-mdm.dm-us.informaticacloud.com`). The connector does **not** perform the `/saas` removal or `-mdm` host rewrite — you must supply the final URL. |
+| **TLS** | No | — | Optional TLS context (protocol, truststore) for HTTPS. Defaults to HTTPS with the JVM default truststore. |
+| **Advanced** | No | — | Same advanced settings as Basic Auth (connection timeout, persistent connections, max connections, idle timeout, streaming, response buffer, bypass metadata cache, proxy). |
+
+### Mule XML example
+
+```xml
+<b360:config name="B360_Passthrough" doc:name="B360 Passthrough">
+    <b360:passthrough-connection
+        sessionId="#[vars.idsSessionId]"
+        baseApiUrl="#[vars.b360MdmBaseUrl]">
+        <expiration-policy maxIdleTime="5" timeUnit="MINUTES" />
+    </b360:passthrough-connection>
+</b360:config>
+```
+
+### Memory and connection-pool considerations
+
+Because both **Session ID** and **B360 MDM Base API URL** accept DataWeave expressions, Mule treats each unique combination of resolved values as a distinct connection key. If a user passes a unique token per request (e.g. from an inbound HTTP header), Mule creates a new `B360Connection` instance every time the expression evaluates to a previously unseen value.
+
+To prevent unbounded growth of connection instances, configure the **Expiration Policy** on the `<b360:config>` element:
+
+```xml
+<expiration-policy maxIdleTime="5" timeUnit="MINUTES" />
+```
+
+This tells Mule to automatically evict connections that have been idle for the specified duration. The default dynamic expiration policy (5-minute idle timeout) is suitable for most workloads. For high-cardinality token scenarios (e.g. thousands of unique session IDs per minute), consider a shorter idle timeout.
+
+> **Important:** The Passthrough provider still extends `CachedConnectionProvider`, so Mule's connection pool and validation logic apply. The `validate()` method sends a lightweight GET to the B360 business-entity endpoint to verify the session is still valid. If the session ID is a JWT that expires within 5 minutes, validation fails and the connection is evicted — but unlike Basic Auth, no automatic re-login occurs. The caller must supply a fresh token.
+
+### Deriving the B360 MDM Base URL
+
+If you are performing the login yourself (e.g. via an HTTP Request connector) and need to derive the MDM base URL from the login response, apply the same transformation the Basic Auth provider performs automatically:
+
+1. Take the `baseApiUrl` from the login response (e.g. `https://use4.dm-us.informaticacloud.com/saas`).
+2. Remove `/saas` from the path.
+3. Replace the first host segment with `{segment}-mdm` (e.g. `use4` → `use4-mdm`).
+
+**DataWeave example:**
+
+```dataweave
+%dw 2.0
+var rawBaseApiUrl = payload.products[0].baseApiUrl
+// 1. Remove /saas
+var withoutSaas = rawBaseApiUrl replace "/saas" with ""
+// 2. Replace first subdomain: e.g. use4.dm-us → use4-mdm.dm-us
+var mdmUrl = withoutSaas replace /(:\/\/)([^.]+)(\.)/  with "$1$2-mdm$3"
+---
+mdmUrl
+```
+
+This produces `https://use4-mdm.dm-us.informaticacloud.com` from `https://use4.dm-us.informaticacloud.com/saas`.
 
 ---
 

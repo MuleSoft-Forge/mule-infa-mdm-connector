@@ -21,6 +21,7 @@ import com.mulesoft.connectors.b360.internal.error.B360ErrorType;
 
 import java.io.InputStream;
 import java.net.SocketTimeoutException;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Encapsulates the B360 session and HTTP client. Operations must not access the HttpClient directly.
@@ -98,8 +99,20 @@ public final class B360Connection {
                 });
     }
 
+    /**
+     * Executes an HTTP request asynchronously, adding the B360 session header, and returns the raw
+     * {@link HttpResponse} regardless of status code. Unlike {@link #executeAsync}, this does NOT
+     * throw on HTTP >= 300 — the caller is responsible for interpreting the status code.
+     * Used by the Generic Request operation where the user expects to see any HTTP response.
+     */
+    public CompletableFuture<HttpResponse> executeAsyncRaw(HttpRequestBuilder requestBuilder) {
+        requestBuilder.addHeader(IDS_SESSION_ID_HEADER, sessionId);
+        HttpRequest request = requestBuilder.build();
+        return httpClient.sendAsync(request);
+    }
+
     /** Extracts request/tracing ID from response headers (INFA-REQUEST-ID, X-Request-Id, Tracking-Id). */
-    private static String getRequestIdFromResponse(HttpResponse response) {
+    public static String getRequestIdFromResponse(HttpResponse response) {
         if (response == null) return null;
         String v = getHeaderValueIgnoreCase(response, "INFA-REQUEST-ID");
         if (v != null && !v.isEmpty()) return v;
@@ -110,7 +123,7 @@ public final class B360Connection {
         return null;
     }
 
-    private static String getHeaderValueIgnoreCase(HttpResponse response, String name) {
+    public static String getHeaderValueIgnoreCase(HttpResponse response, String name) {
         try {
             if (response.getHeaderNames() != null) {
                 for (String n : response.getHeaderNames()) {
