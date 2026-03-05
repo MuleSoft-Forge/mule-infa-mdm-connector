@@ -113,8 +113,7 @@ public class SearchOperation {
             validateFieldsIsJsonObject(fieldsStr.trim());
         }
         String body = buildSearchBody(entityType, criteria, filter, sortGroup, offset, limit);
-        // TODO: comment out to disable request payload logging
-        // LOGGER.info("INFA MDM Search request payload: {}", body);
+
 
         String path = connection.getBaseApiUrl() + B360Endpoints.SEARCH;
         HttpRequestBuilder builder = HttpRequest.builder()

@@ -73,33 +73,27 @@ Unlike the dedicated operations, the Generic Request **does not throw on non-2xx
 | Scenario | Behavior |
 |----------|----------|
 | **HTTP 2xx** | Response body and attributes returned normally. |
-| **HTTP 3xx / 4xx (except 401) / 5xx** | Response body and attributes returned normally — **no exception is thrown**. Inspect `#[attributes.statusCode]` in DataWeave to handle errors. |
-| **HTTP 401 Unauthorized** | **Throws `B360:CONNECTIVITY`** so Mule invalidates the connection and re-establishes it (triggering a fresh login for Basic Auth). See below. |
+| **HTTP 3xx / 4xx / 5xx** | Response body and attributes returned normally — **no exception is thrown**. Inspect `#[attributes.statusCode]` in DataWeave to handle errors. |
 | **Network / connectivity failure** | Throws `B360:CONNECTIVITY`. |
 | **Timeout** | Throws `B360:TIMEOUT`. |
 
-This differs from the dedicated operations (Master Read, Search, etc.) which throw `B360:CLIENT_ERROR` or `B360:SERVER_ERROR` on all non-2xx responses. The Generic Request is designed to give you the raw response for most status codes so you can decide how to handle them.
+This differs from the dedicated operations (Master Read, Search, etc.) which throw `B360:CLIENT_ERROR` or `B360:SERVER_ERROR` on all non-2xx responses. The Generic Request is designed to give you the raw response so you can decide how to handle errors.
 
-### Why 401 is treated differently
+### Transparent session refresh on 401
 
-A 401 means the session ID is expired or invalid — the connection itself is broken. If the Generic Request silently returned a 401 as a normal result, the cached connection would remain stale and **every subsequent call** (including dedicated operations) would also fail.
+All operations (Generic Request **and** dedicated operations) share the same transparent retry behaviour:
 
-By throwing `B360:CONNECTIVITY` on 401:
+1. The connector sends the request with the current `IDS-SESSION-ID`.
+2. If the API returns **HTTP 401** (session expired), the connector **automatically re-authenticates** (calls the Informatica login API with the same credentials) and obtains a fresh session ID.
+3. The original request is **replayed once** with the new session.
+4. If the retry also fails, the error propagates normally.
 
-- **Basic Auth provider:** Mule invalidates the connection, calls `disconnect()` → `connect()`, which performs a fresh login and obtains a new session ID. The next request succeeds automatically (if reconnection strategy is configured).
-- **Passthrough provider:** Mule invalidates the connection, but `connect()` simply re-uses whatever token the expression evaluates to. If the caller's expression still resolves to the same expired token, the reconnection will also fail. The caller must supply a fresh token.
+This happens inside the `B360Connection` — no user configuration is required. The Mule app developer does **not** need to configure a `<reconnection>` strategy for session expiry (though it remains useful for startup connectivity issues).
 
-To enable automatic retry after reconnection, configure a reconnection strategy on the config:
-
-```xml
-<b360:config name="B360_Config">
-    <b360:basic-connection ...>
-        <reconnection>
-            <reconnect frequency="2000" count="2" />
-        </reconnection>
-    </b360:basic-connection>
-</b360:config>
-```
+| Provider | Retry behaviour on 401 |
+|----------|----------------------|
+| **Basic Auth** | Re-login is performed automatically; the request is replayed with the new session. Fully transparent. |
+| **Passthrough** | No re-login is possible (the connector doesn't own the credentials). The 401 response is returned as-is. The caller must supply a fresh token. |
 
 ---
 

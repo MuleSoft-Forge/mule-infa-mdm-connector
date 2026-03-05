@@ -14,10 +14,14 @@ import org.mule.runtime.extension.api.runtime.process.CompletionCallback;
 import org.mule.runtime.extension.api.runtime.operation.Result;
 import org.mule.runtime.extension.api.exception.ModuleException;
 import org.mule.runtime.api.i18n.I18nMessageFactory;
+import org.mule.runtime.api.connection.ConnectionException;
 
 import com.mulesoft.connectors.b360.api.B360ApiError;
 import com.mulesoft.connectors.b360.internal.operation.utils.B360Utils;
 import com.mulesoft.connectors.b360.internal.error.B360ErrorType;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.net.SocketTimeoutException;
@@ -25,21 +29,43 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Encapsulates the B360 session and HTTP client. Operations must not access the HttpClient directly.
+ * <p>
+ * On HTTP 401, the connection attempts a single transparent re-authentication via the
+ * {@link SessionRefresher} callback (supplied by the connection provider) and replays the
+ * request. If no refresher is available (Passthrough) or the retry also returns 401, the
+ * error propagates as a {@link ConnectionException}.
  */
 public final class B360Connection {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(B360Connection.class);
     private static final String IDS_SESSION_ID_HEADER = "IDS-SESSION-ID";
 
-    private final String sessionId;
+    private volatile String sessionId;
     private final String baseApiUrl;
     private final HttpClient httpClient;
     private final boolean bypassMetadataCache;
+    private final SessionRefresher sessionRefresher;
 
-    public B360Connection(String sessionId, String baseApiUrl, HttpClient httpClient, boolean bypassMetadataCache) {
+    /**
+     * Callback that performs re-authentication and returns a fresh session ID.
+     * Supplied by the connection provider; null for Passthrough (no refresh possible).
+     */
+    @FunctionalInterface
+    public interface SessionRefresher {
+        String refresh() throws ConnectionException;
+    }
+
+    public B360Connection(String sessionId, String baseApiUrl, HttpClient httpClient,
+                          boolean bypassMetadataCache, SessionRefresher sessionRefresher) {
         this.sessionId = sessionId;
         this.baseApiUrl = baseApiUrl;
         this.httpClient = httpClient;
         this.bypassMetadataCache = bypassMetadataCache;
+        this.sessionRefresher = sessionRefresher;
+    }
+
+    public B360Connection(String sessionId, String baseApiUrl, HttpClient httpClient, boolean bypassMetadataCache) {
+        this(sessionId, baseApiUrl, httpClient, bypassMetadataCache, null);
     }
 
     public String getBaseApiUrl() {
@@ -69,7 +95,9 @@ public final class B360Connection {
     }
 
     /**
-     * Executes an HTTP request asynchronously, adding the B360 session header. Completes the callback with the response body stream and HTTP context (status code, request ID) or error.
+     * Executes an HTTP request asynchronously, adding the B360 session header. On 401,
+     * transparently re-authenticates once and replays the request. Completes the callback
+     * with the response body stream and HTTP context or error.
      */
     public void executeAsync(HttpRequestBuilder requestBuilder, CompletionCallback<InputStream, B360HttpResponseContext> callback) {
         requestBuilder.addHeader(IDS_SESSION_ID_HEADER, sessionId);
@@ -81,34 +109,90 @@ public final class B360Connection {
                         callback.error(enrichWithUri(throwable, requestUri));
                         return;
                     }
-                    if (response.getStatusCode() >= 300) {
-                        String responseBody = B360Utils.readStreamAsString(response.getEntity() != null ? response.getEntity().getContent() : null);
-                        B360ApiError apiError = B360ErrorParser.parseFromResponseBody(responseBody);
-                        String fullMessage = buildErrorMessage(response.getStatusCode(), response.getReasonPhrase(), apiError, requestUri);
-                        B360ErrorType errorType = response.getStatusCode() >= 500 ? B360ErrorType.SERVER_ERROR
-                                : response.getStatusCode() >= 400 ? B360ErrorType.CLIENT_ERROR : B360ErrorType.CONNECTIVITY;
-                        callback.error(new B360ConnectionException(fullMessage, apiError, errorType));
+                    if (response.getStatusCode() == 401 && sessionRefresher != null) {
+                        LOGGER.info("HTTP 401 on {}; attempting re-authentication.", requestUri);
+                        consumeBody(response);
+                        try {
+                            String newSession = sessionRefresher.refresh();
+                            sessionId = newSession;
+                        } catch (Exception refreshEx) {
+                            LOGGER.warn("Re-authentication failed: {}", refreshEx.getMessage());
+                            callback.error(new ConnectionException(
+                                    buildErrorMessage(401, response.getReasonPhrase(), null, requestUri)
+                                            + " Re-authentication also failed: " + refreshEx.getMessage()));
+                            return;
+                        }
+                        HttpRequest retryRequest = rebuildRequestWithNewSession(request);
+                        httpClient.sendAsync(retryRequest)
+                                .whenComplete((retryResponse, retryThrowable) -> {
+                                    if (retryThrowable != null) {
+                                        callback.error(enrichWithUri(retryThrowable, requestUri));
+                                        return;
+                                    }
+                                    completeAsyncCallback(retryResponse, requestUri, callback);
+                                });
                         return;
                     }
-                    InputStream body = response.getEntity() != null ? response.getEntity().getContent() : null;
-                    String requestId = getRequestIdFromResponse(response);
-                    callback.success(Result.<InputStream, B360HttpResponseContext>builder()
-                            .output(body)
-                            .attributes(new B360HttpResponseContext(response.getStatusCode(), requestId))
-                            .build());
+                    completeAsyncCallback(response, requestUri, callback);
                 });
+    }
+
+    private void completeAsyncCallback(HttpResponse response, String requestUri,
+                                       CompletionCallback<InputStream, B360HttpResponseContext> callback) {
+        if (response.getStatusCode() >= 300) {
+            String responseBody = B360Utils.readStreamAsString(response.getEntity() != null ? response.getEntity().getContent() : null);
+            B360ApiError apiError = B360ErrorParser.parseFromResponseBody(responseBody);
+            String fullMessage = buildErrorMessage(response.getStatusCode(), response.getReasonPhrase(), apiError, requestUri);
+            if (response.getStatusCode() == 401) {
+                callback.error(new ConnectionException(fullMessage));
+                return;
+            }
+            B360ErrorType errorType = response.getStatusCode() >= 500 ? B360ErrorType.SERVER_ERROR
+                    : response.getStatusCode() >= 400 ? B360ErrorType.CLIENT_ERROR : B360ErrorType.CONNECTIVITY;
+            callback.error(new B360ConnectionException(fullMessage, apiError, errorType));
+            return;
+        }
+        InputStream body = response.getEntity() != null ? response.getEntity().getContent() : null;
+        String requestId = getRequestIdFromResponse(response);
+        callback.success(Result.<InputStream, B360HttpResponseContext>builder()
+                .output(body)
+                .attributes(new B360HttpResponseContext(response.getStatusCode(), requestId))
+                .build());
     }
 
     /**
      * Executes an HTTP request asynchronously, adding the B360 session header, and returns the raw
-     * {@link HttpResponse} regardless of status code. Unlike {@link #executeAsync}, this does NOT
-     * throw on HTTP >= 300 — the caller is responsible for interpreting the status code.
-     * Used by the Generic Request operation where the user expects to see any HTTP response.
+     * {@link HttpResponse}. On 401, transparently re-authenticates once and replays the request.
+     * Unlike {@link #executeAsync}, non-2xx responses (except 401 after failed retry) are returned
+     * as-is — the caller is responsible for interpreting the status code.
      */
     public CompletableFuture<HttpResponse> executeAsyncRaw(HttpRequestBuilder requestBuilder) {
         requestBuilder.addHeader(IDS_SESSION_ID_HEADER, sessionId);
         HttpRequest request = requestBuilder.build();
-        return httpClient.sendAsync(request);
+        CompletableFuture<HttpResponse> future = httpClient.sendAsync(request);
+        if (sessionRefresher == null) {
+            return future;
+        }
+        return future.thenCompose(response -> {
+            if (response.getStatusCode() != 401) {
+                return CompletableFuture.completedFuture(response);
+            }
+            String requestUri = request.getUri() != null ? request.getUri().toString() : null;
+            LOGGER.info("HTTP 401 on {}; attempting re-authentication.", requestUri);
+            consumeBody(response);
+            try {
+                String newSession = sessionRefresher.refresh();
+                sessionId = newSession;
+            } catch (Exception refreshEx) {
+                LOGGER.warn("Re-authentication failed: {}", refreshEx.getMessage());
+                CompletableFuture<HttpResponse> failed = new CompletableFuture<>();
+                failed.completeExceptionally(new ConnectionException(
+                        "HTTP 401 Unauthorized. Re-authentication failed: " + refreshEx.getMessage()));
+                return failed;
+            }
+            HttpRequest retryRequest = rebuildRequestWithNewSession(request);
+            return httpClient.sendAsync(retryRequest);
+        });
     }
 
     /** Extracts request/tracing ID from response headers (INFA-REQUEST-ID, X-Request-Id, Tracking-Id). */
@@ -123,7 +207,7 @@ public final class B360Connection {
         return null;
     }
 
-    public static String getHeaderValueIgnoreCase(HttpResponse response, String name) {
+    private static String getHeaderValueIgnoreCase(HttpResponse response, String name) {
         try {
             if (response.getHeaderNames() != null) {
                 for (String n : response.getHeaderNames()) {
@@ -138,11 +222,8 @@ public final class B360Connection {
     }
 
     /**
-     * Executes an HTTP request synchronously for use by PagingProvider. Blocks until the response is received.
-     * Do not use for non-paged operations; use executeAsync instead. Timeout is governed by the HTTP client configuration.
-     *
-     * @param requestBuilder the request to execute (session header is added by this method)
-     * @return response body stream
+     * Executes an HTTP request synchronously. On 401, transparently re-authenticates once
+     * and replays the request. Used by PagingProvider, metadata resolvers, and value providers.
      */
     public InputStream executeSync(HttpRequestBuilder requestBuilder) {
         requestBuilder.addHeader(IDS_SESSION_ID_HEADER, sessionId);
@@ -150,27 +231,76 @@ public final class B360Connection {
         String requestUri = request.getUri() != null ? request.getUri().toString() : null;
         try {
             HttpResponse response = httpClient.send(request);
-            if (response.getStatusCode() >= 300) {
-                String responseBody = B360Utils.readStreamAsString(response.getEntity() != null ? response.getEntity().getContent() : null);
-                B360ApiError apiError = B360ErrorParser.parseFromResponseBody(responseBody);
-                String fullMessage = buildErrorMessage(response.getStatusCode(), response.getReasonPhrase(), apiError, requestUri);
-                B360ErrorType errorType = response.getStatusCode() >= 500 ? B360ErrorType.SERVER_ERROR
-                        : response.getStatusCode() >= 400 ? B360ErrorType.CLIENT_ERROR : B360ErrorType.CONNECTIVITY;
-                throw new B360ConnectionException(fullMessage, apiError, errorType);
+            if (response.getStatusCode() == 401 && sessionRefresher != null) {
+                LOGGER.info("HTTP 401 on {}; attempting re-authentication.", requestUri);
+                consumeBody(response);
+                try {
+                    String newSession = sessionRefresher.refresh();
+                    sessionId = newSession;
+                } catch (Exception refreshEx) {
+                    LOGGER.warn("Re-authentication failed: {}", refreshEx.getMessage());
+                    String fullMessage = buildErrorMessage(401, response.getReasonPhrase(), null, requestUri)
+                            + " Re-authentication also failed: " + refreshEx.getMessage();
+                    throw new B360ConnectionException(fullMessage, B360ErrorType.CONNECTIVITY);
+                }
+                HttpRequest retryRequest = rebuildRequestWithNewSession(request);
+                HttpResponse retryResponse = httpClient.send(retryRequest);
+                return handleSyncResponse(retryResponse, requestUri);
             }
-            return response.getEntity() != null ? response.getEntity().getContent() : null;
+            return handleSyncResponse(response, requestUri);
+        } catch (B360ConnectionException e) {
+            throw e;
         } catch (Exception e) {
-            if (e instanceof B360ConnectionException) {
-                throw (B360ConnectionException) e;
-            }
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             B360ErrorType errorType = isTimeout(e) ? B360ErrorType.TIMEOUT : B360ErrorType.CONNECTIVITY;
             throw new B360ConnectionException(appendRequestUri(msg, requestUri), null, errorType, e);
         }
     }
 
+    private InputStream handleSyncResponse(HttpResponse response, String requestUri) {
+        if (response.getStatusCode() >= 300) {
+            String responseBody = B360Utils.readStreamAsString(response.getEntity() != null ? response.getEntity().getContent() : null);
+            B360ApiError apiError = B360ErrorParser.parseFromResponseBody(responseBody);
+            String fullMessage = buildErrorMessage(response.getStatusCode(), response.getReasonPhrase(), apiError, requestUri);
+            B360ErrorType errorType = response.getStatusCode() >= 500 ? B360ErrorType.SERVER_ERROR
+                    : response.getStatusCode() >= 400 ? B360ErrorType.CLIENT_ERROR : B360ErrorType.CONNECTIVITY;
+            throw new B360ConnectionException(fullMessage, apiError, errorType);
+        }
+        return response.getEntity() != null ? response.getEntity().getContent() : null;
+    }
+
     public void invalidate() {
         // Connection state only; do not stop the HttpClient (provider's stop() does that).
+    }
+
+    /**
+     * Rebuilds an already-built request with the current (refreshed) session ID.
+     * Copies URI, method, headers (replacing IDS-SESSION-ID), and entity from the original.
+     */
+    private HttpRequest rebuildRequestWithNewSession(HttpRequest original) {
+        HttpRequestBuilder builder = HttpRequest.builder()
+                .uri(original.getUri().toString())
+                .method(original.getMethod());
+        for (String headerName : original.getHeaderNames()) {
+            if (IDS_SESSION_ID_HEADER.equalsIgnoreCase(headerName)) {
+                builder.addHeader(IDS_SESSION_ID_HEADER, sessionId);
+            } else {
+                builder.addHeader(headerName, original.getHeaderValue(headerName));
+            }
+        }
+        if (original.getEntity() != null) {
+            builder.entity(original.getEntity());
+        }
+        return builder.build();
+    }
+
+    private static void consumeBody(HttpResponse response) {
+        try {
+            if (response.getEntity() != null && response.getEntity().getContent() != null) {
+                B360Utils.readStreamAsString(response.getEntity().getContent());
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private static String appendRequestUri(String message, String requestUri) {

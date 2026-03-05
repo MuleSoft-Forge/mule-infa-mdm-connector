@@ -134,19 +134,6 @@ public class GenericRequestOperation {
                         return;
                     }
                     try {
-                        // 401 means the session is dead — throw CONNECTIVITY so Mule
-                        // invalidates the connection and re-establishes it (triggering
-                        // a fresh login for Basic Auth). Without this, every subsequent
-                        // call would also fail because the cached connection is stale.
-                        if (response.getStatusCode() == 401) {
-                            String body401 = response.getEntity() != null
-                                    ? B360Utils.readStreamAsString(response.getEntity().getContent()) : "";
-                            callback.error(new ModuleException(
-                                    "HTTP 401 Unauthorized. Session expired or invalid — the connector will re-authenticate."
-                                            + (body401 != null && !body401.isEmpty() ? " " + body401 : ""),
-                                    B360ErrorType.CONNECTIVITY));
-                            return;
-                        }
                         InputStream responseBody = response.getEntity() != null ? response.getEntity().getContent() : null;
                         GenericRequestResponseAttributes attrs = buildAttributes(response);
                         callback.success(Result.<InputStream, GenericRequestResponseAttributes>builder()

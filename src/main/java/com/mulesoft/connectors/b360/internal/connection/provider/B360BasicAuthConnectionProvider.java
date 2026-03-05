@@ -32,7 +32,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -82,18 +81,30 @@ public class B360BasicAuthConnectionProvider extends BaseB360ConnectionProvider 
 
     @Override
     public B360Connection connect() throws ConnectionException {
+        LoginResult login = performLogin();
+        B360Connection.SessionRefresher refresher = () -> {
+            LOGGER.info("Re-authenticating with Informatica Cloud (session expired).");
+            LoginResult fresh = performLogin();
+            return fresh.sessionId;
+        };
+        return new B360Connection(login.sessionId, login.baseApiUrl, getHttpClient(), isBypassMetadataCache(), refresher);
+    }
+
+    /**
+     * Performs the login call and returns sessionId + baseApiUrl.
+     * Called both from {@link #connect()} and from the {@link B360Connection.SessionRefresher}.
+     */
+    private LoginResult performLogin() throws ConnectionException {
         String loginUrl = buildLoginUrl(baseUrl);
-        Map<String, String> login = new LinkedHashMap<>();
-        login.put("username", username != null ? username : "");
-        login.put("password", password != null ? password : "");
+        Map<String, String> loginBody = new LinkedHashMap<>();
+        loginBody.put("username", username != null ? username : "");
+        loginBody.put("password", password != null ? password : "");
         String body;
         try {
-            body = B360Utils.OBJECT_MAPPER.writeValueAsString(login);
+            body = B360Utils.OBJECT_MAPPER.writeValueAsString(loginBody);
         } catch (JsonProcessingException e) {
             throw new ConnectionException("Failed to build login request body", e);
         }
-        // TODO: comment out to disable request payload logging (body contains credentials)
-        // LOGGER.info("INFA MDM Login request payload: {}", body);
 
         HttpRequest request = HttpRequest.builder()
                 .uri(loginUrl)
@@ -116,7 +127,6 @@ public class B360BasicAuthConnectionProvider extends BaseB360ConnectionProvider 
             }
             String responseBody = B360Utils.readStreamAsString(response.getEntity().getContent());
             JsonNode root = B360Utils.OBJECT_MAPPER.readTree(responseBody);
-            // API returns sessionId under userInfo (or root); value may be a session ID or a JWT (per Informatica JWT Support).
             String sessionId = root.has("userInfo") && root.get("userInfo").has("sessionId")
                     ? root.get("userInfo").get("sessionId").asText()
                     : (root.has("sessionId") ? root.get("sessionId").asText() : "");
@@ -135,11 +145,8 @@ public class B360BasicAuthConnectionProvider extends BaseB360ConnectionProvider 
             if (baseApiUrl == null || baseApiUrl.isEmpty()) {
                 throw new ConnectionException("Login response missing baseApiUrl");
             }
-            // Per Informatica B360 REST API: remove /saas and replace first host segment with {segment}-mdm
-            // e.g. https://use4.dm-us.informaticacloud.com/saas → https://use4-mdm.dm-us.informaticacloud.com
-            // e.g. https://usw1.dmp-us.informaticacloud.com/saas → https://usw1-mdm.dmp-us.informaticacloud.com
             String publicUrl = toB360MdmBaseUrl(baseApiUrl);
-            return new B360Connection(sessionId, publicUrl, getHttpClient(), isBypassMetadataCache());
+            return new LoginResult(sessionId, publicUrl);
         } catch (ConnectionException e) {
             throw e;
         } catch (B360ConnectionException e) {
@@ -147,6 +154,15 @@ public class B360BasicAuthConnectionProvider extends BaseB360ConnectionProvider 
         } catch (Exception e) {
             String message = B360ConnectionErrorMessages.forException(e);
             throw new ConnectionException(message, e);
+        }
+    }
+
+    private static final class LoginResult {
+        final String sessionId;
+        final String baseApiUrl;
+        LoginResult(String sessionId, String baseApiUrl) {
+            this.sessionId = sessionId;
+            this.baseApiUrl = baseApiUrl;
         }
     }
 
@@ -168,7 +184,6 @@ public class B360BasicAuthConnectionProvider extends BaseB360ConnectionProvider 
         if (withoutSaas.endsWith("/")) {
             withoutSaas = withoutSaas.substring(0, withoutSaas.length() - 1);
         }
-        // Replace first subdomain (e.g. use4, usw1) with {subdomain}-mdm
         return withoutSaas.replaceFirst("(://)([^.]+)(\\.)", "$1$2-mdm$3");
     }
 }
