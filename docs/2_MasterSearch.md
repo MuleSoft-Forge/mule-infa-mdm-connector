@@ -75,6 +75,30 @@ This format applies to string, date, and date-time fields. For other field types
 
 ---
 
+## Fuzzy search patterns (SAAS Search Scenarios) — great for MCP / Agent Planning
+
+Find the search behavior for different patterns in the **top-right Search** tab in the application.
+
+**Source:** [SAAS Search Scenarios](https://knowledge.informatica.com/s/article/SAAS-Search-Scenario-s?language=en_US&type=external) (Informatica Knowledge)
+
+| Example search string | Search behaviour |
+|------------------------|------------------|
+| `John Smith` | Searches for records that contain John, Smith, or any variations of John or Smith as a field value. |
+| `"John Smith"` | Searches for records that contain John Smith as a field value. |
+| `John*` | Searches for records that contain a value that starts with John, such as Johnson or Johnny. |
+| `Jo*n` | Searches for records that start with Jo and end with n, such as Johansson or Jordan. |
+| `*` | Returns all the records. |
+| `Jo?n` | Searches for records with a single character between Jo and n, such as John and Joan. You can use the question mark wildcard character multiple times in a word. |
+| `The Washington Post` | Ignores the stopword *The* and searches for records that contain Washington, Post, or any variations of Washington or Post. Example stopwords are *a*, *an*, *of*, and *with*. For a complete list of stopwords, contact Informatica Global Customer Support. |
+| `-John*` | Searches for records that don't start with John or any variations of John, such as Johnson or Johnny. |
+| `+Manager +Janet*` | Searches for records that contain Manager and a field value that starts with Janet. For example, a record with the name Janet Williams and designation Manager matches the search string. |
+| `Joan~` | Searches for records with similar values where up to two characters in the search string can be replaced. For example, John or Donn can match the search string. |
+| `Hans && Williams` | Searches for records that contain Hans and Williams in the same record. For example, first name is Hans and last name is Williams. |
+| `(Janet* \|\| John*) && Manager` | Searches for records that contain Manager and any variations of Janet or John as a field value. For example, a record with first name Johnny and designation Manager. |
+| `/Joan_([0-9]+)/` | Searches for records that contain Joan_ followed by a numeral, such as Joan_123 or Joan_1. The forward slashes act as escape characters so that the wildcard characters are not considered as part of the search string. |
+
+---
+
 ## Search string examples (quick reference)
 
 - `Hans && Williams` — records containing both in the same record.

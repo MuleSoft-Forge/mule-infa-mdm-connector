@@ -7,7 +7,7 @@
 package com.mulesoft.connectors.b360.api;
 
 /**
- * HTTP methods available for the Generic Request operation.
+ * HTTP methods available for the Http Request operation.
  */
 public enum HttpMethod {
     GET,

@@ -12,10 +12,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Generic HTTP response attributes for the Generic Request operation.
+ * HTTP response attributes for the Http Request operation.
  * Exposes status code, reason phrase, response headers, and the Informatica request/tracing ID.
  */
-public final class GenericRequestResponseAttributes implements Serializable {
+public final class HttpRequestResponseAttributes implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
@@ -24,8 +24,8 @@ public final class GenericRequestResponseAttributes implements Serializable {
     private final String requestId;
     private final Map<String, String> headers;
 
-    public GenericRequestResponseAttributes(int statusCode, String reasonPhrase, String requestId,
-                                            Map<String, String> headers) {
+    public HttpRequestResponseAttributes(int statusCode, String reasonPhrase, String requestId,
+                                         Map<String, String> headers) {
         this.statusCode = statusCode;
         this.reasonPhrase = reasonPhrase != null ? reasonPhrase : "";
         this.requestId = requestId != null ? requestId : "";
@@ -56,7 +56,7 @@ public final class GenericRequestResponseAttributes implements Serializable {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        GenericRequestResponseAttributes that = (GenericRequestResponseAttributes) o;
+        HttpRequestResponseAttributes that = (HttpRequestResponseAttributes) o;
         return statusCode == that.statusCode
                 && Objects.equals(reasonPhrase, that.reasonPhrase)
                 && Objects.equals(requestId, that.requestId)

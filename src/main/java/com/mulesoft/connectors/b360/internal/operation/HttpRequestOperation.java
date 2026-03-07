@@ -6,8 +6,8 @@
  */
 package com.mulesoft.connectors.b360.internal.operation;
 
-import com.mulesoft.connectors.b360.api.GenericRequestResponseAttributes;
 import com.mulesoft.connectors.b360.api.HttpMethod;
+import com.mulesoft.connectors.b360.api.HttpRequestResponseAttributes;
 import com.mulesoft.connectors.b360.internal.config.B360Configuration;
 import com.mulesoft.connectors.b360.internal.connection.B360Connection;
 import com.mulesoft.connectors.b360.internal.error.B360ErrorProvider;
@@ -41,19 +41,19 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Generic HTTP request operation that reuses the connector's authenticated session.
+ * HTTP request operation that reuses the connector's authenticated session.
  * Acts as an API client (like Postman) — the user chooses the HTTP method, path, headers,
  * query parameters, and body. The connector appends the IDS-SESSION-ID automatically.
  * <p>
  * This ensures the connector remains useful even when Informatica adds new API resources
  * before the connector ships a dedicated operation for them.
  */
-public class GenericRequestOperation {
+public class HttpRequestOperation {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(GenericRequestOperation.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(HttpRequestOperation.class);
 
-    @DisplayName("INFA MDM - Generic Request")
-    @Summary("Send a generic HTTP request to any Informatica B360 / MDM API endpoint, reusing the connector's authenticated session."
+    @DisplayName("INFA MDM - Http Request")
+    @Summary("Send an HTTP request to any Informatica B360 / MDM API endpoint, reusing the connector's authenticated session."
             + "<ul>"
             + "<li> Choose the HTTP method (GET, POST, PUT, PATCH, DELETE)"
             + "<li> Specify the relative path (appended to the B360 MDM base URL)"
@@ -63,7 +63,7 @@ public class GenericRequestOperation {
             + "</ul>")
     @MediaType(value = "application/json", strict = false)
     @Throws(B360ErrorProvider.class)
-    public void genericRequest(
+    public void httpRequest(
             @Config B360Configuration config,
             @Connection B360Connection connection,
             @DisplayName("HTTP Method")
@@ -88,7 +88,7 @@ public class GenericRequestOperation {
             @DisplayName("Request Body")
             @Summary("Optional JSON request body. Accepts an InputStream (raw JSON), a String, or a Java object (Map/List) which is serialized to JSON.")
             Object body,
-            CompletionCallback<InputStream, GenericRequestResponseAttributes> callback) {
+            CompletionCallback<InputStream, HttpRequestResponseAttributes> callback) {
 
         if (path == null || path.trim().isEmpty()) {
             throw new ModuleException("Path is required and must not be empty.", B360ErrorType.CLIENT_ERROR);
@@ -122,21 +122,21 @@ public class GenericRequestOperation {
             builder.entity(new InputStreamHttpEntity(new ByteArrayInputStream(bodyBytes)));
         }
 
-        LOGGER.info("INFA MDM Generic Request: {} {}", method, fullUri);
+        LOGGER.info("INFA MDM Http Request: {} {}", method, fullUri);
 
         connection.executeAsyncRaw(builder)
                 .whenComplete((response, throwable) -> {
                     if (throwable != null) {
                         B360ErrorType errorType = isTimeout(throwable) ? B360ErrorType.TIMEOUT : B360ErrorType.CONNECTIVITY;
                         callback.error(new ModuleException(
-                                "Generic request failed: " + (throwable.getMessage() != null ? throwable.getMessage() : throwable.getClass().getSimpleName()),
+                                "Http request failed: " + (throwable.getMessage() != null ? throwable.getMessage() : throwable.getClass().getSimpleName()),
                                 errorType, throwable));
                         return;
                     }
                     try {
                         InputStream responseBody = response.getEntity() != null ? response.getEntity().getContent() : null;
-                        GenericRequestResponseAttributes attrs = buildAttributes(response);
-                        callback.success(Result.<InputStream, GenericRequestResponseAttributes>builder()
+                        HttpRequestResponseAttributes attrs = buildAttributes(response);
+                        callback.success(Result.<InputStream, HttpRequestResponseAttributes>builder()
                                 .output(responseBody)
                                 .attributes(attrs)
                                 .build());
@@ -146,7 +146,7 @@ public class GenericRequestOperation {
                 });
     }
 
-    private static GenericRequestResponseAttributes buildAttributes(HttpResponse response) {
+    private static HttpRequestResponseAttributes buildAttributes(HttpResponse response) {
         int statusCode = response.getStatusCode();
         String reasonPhrase = response.getReasonPhrase();
         String requestId = B360Connection.getRequestIdFromResponse(response);
@@ -159,7 +159,7 @@ public class GenericRequestOperation {
             }
         } catch (Exception ignored) {
         }
-        return new GenericRequestResponseAttributes(statusCode, reasonPhrase, requestId, headers);
+        return new HttpRequestResponseAttributes(statusCode, reasonPhrase, requestId, headers);
     }
 
     private static HttpConstants.Method toMuleMethod(HttpMethod method) {

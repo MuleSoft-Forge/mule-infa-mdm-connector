@@ -8,8 +8,9 @@ package com.mulesoft.connectors.b360.internal.config;
 
 import com.mulesoft.connectors.b360.internal.connection.provider.B360BasicAuthConnectionProvider;
 import com.mulesoft.connectors.b360.internal.connection.provider.B360PassthroughConnectionProvider;
-import com.mulesoft.connectors.b360.internal.operation.GenericRequestOperation;
+import com.mulesoft.connectors.b360.internal.operation.HttpRequestOperation;
 import com.mulesoft.connectors.b360.internal.operation.MasterReadOperation;
+import com.mulesoft.connectors.b360.internal.operation.MetaDataReadOperation;
 import com.mulesoft.connectors.b360.internal.operation.SearchOperation;
 import com.mulesoft.connectors.b360.internal.operation.SourceReadOperation;
 import com.mulesoft.connectors.b360.internal.operation.SourceSubmitOperation;
@@ -35,6 +36,6 @@ import org.mule.runtime.extension.api.annotation.param.display.Summary;
 @DisplayName("Configuration")
 @Summary("<ul><li>Informatica MDM - Business 360 Configuration</li><li>Documentation: <a href=\"https://onlinehelp.informatica.com/IICS/prod/b360/en/index.htm#page/wz-b360-rest-api/Authentication_method.html\">Business 360 REST API Authentication</a></li></ul>")
 @ConnectionProviders({B360BasicAuthConnectionProvider.class, B360PassthroughConnectionProvider.class})
-@Operations({GenericRequestOperation.class, MasterReadOperation.class, SearchOperation.class, SourceReadOperation.class, SourceSubmitOperation.class})
+@Operations({HttpRequestOperation.class, MasterReadOperation.class, MetaDataReadOperation.class, SearchOperation.class, SourceReadOperation.class, SourceSubmitOperation.class})
 public class B360Configuration {
 }

@@ -1,14 +1,14 @@
-# 6. Generic Request
+# 6. Http Request
 
-**Connector operation:** **INFA MDM - Generic Request** — Send a generic HTTP request to any Informatica B360 / MDM API endpoint, reusing the connector's authenticated session. Acts as an API client (like Postman) so the connector remains useful even when Informatica adds new resources before a dedicated operation is shipped.
+**Connector operation:** **INFA MDM - Http Request** — Send an HTTP request to any Informatica B360 / MDM API endpoint, reusing the connector's authenticated session. Acts as an API client (like Postman) so the connector remains useful even when Informatica adds new resources before a dedicated operation is shipped.
 
 ---
 
-## Why a Generic Request operation?
+## Why an Http Request operation?
 
-Informatica's B360 / MDM platform exposes dozens of REST API resources across business entity records, metadata, search, jobs, tasks, and more. This connector ships dedicated operations for the most common workflows (Master Read, Search, Source Read, Source Submit), but the API surface is large and evolves over time.
+Informatica's B360 / MDM platform exposes dozens of REST API resources across business entity records, metadata, search, jobs, tasks, and more. This connector ships dedicated operations for the most common workflows (Master Read, Search, Source Read, Source Submit, MetaData Read), but the API surface is large and evolves over time.
 
-The **Generic Request** operation ensures:
+The **Http Request** operation ensures:
 
 1. **No connector obsolescence.** When Informatica adds a new resource (e.g. a new batch job API, a task management endpoint, or a v2 of an existing resource), users can call it immediately without waiting for a connector update.
 2. **Full API coverage.** Resources that don't justify a dedicated operation (e.g. one-off admin calls, metadata introspection, or custom B360 extensions) are still accessible.
@@ -38,7 +38,7 @@ The connector:
 6. If a **Request Body** is provided, sets `Content-Type: application/json` and sends it.
 7. Returns the **raw response body** as an `InputStream` and the **HTTP response metadata** as attributes.
 
-Unlike the dedicated operations, the Generic Request **does not throw on non-2xx responses**. The user receives the full response (status code, headers, body) and can handle errors in DataWeave or error handlers. This is intentional — a "Postman-like" experience means you see exactly what the API returns.
+Unlike the dedicated operations, the Http Request **does not throw on non-2xx responses**. The user receives the full response (status code, headers, body) and can handle errors in DataWeave or error handlers. This is intentional — a "Postman-like" experience means you see exactly what the API returns.
 
 ---
 
@@ -57,7 +57,7 @@ Unlike the dedicated operations, the Generic Request **does not throw on non-2xx
 ## Output
 
 - **Payload:** `InputStream` — the raw response body from the API. Parse with DataWeave (`#[payload]`) or pass through. May be `null` if the API returns no body (e.g. 204 No Content).
-- **Attributes:** `GenericRequestResponseAttributes` — generic HTTP response metadata:
+- **Attributes:** `HttpRequestResponseAttributes` — HTTP response metadata:
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
@@ -77,11 +77,11 @@ Unlike the dedicated operations, the Generic Request **does not throw on non-2xx
 | **Network / connectivity failure** | Throws `B360:CONNECTIVITY`. |
 | **Timeout** | Throws `B360:TIMEOUT`. |
 
-This differs from the dedicated operations (Master Read, Search, etc.) which throw `B360:CLIENT_ERROR` or `B360:SERVER_ERROR` on all non-2xx responses. The Generic Request is designed to give you the raw response so you can decide how to handle errors.
+This differs from the dedicated operations (Master Read, Search, etc.) which throw `B360:CLIENT_ERROR` or `B360:SERVER_ERROR` on all non-2xx responses. The Http Request is designed to give you the raw response so you can decide how to handle errors.
 
 ### Transparent session refresh on 401
 
-All operations (Generic Request **and** dedicated operations) share the same transparent retry behaviour:
+All operations (Http Request **and** dedicated operations) share the same transparent retry behaviour:
 
 1. The connector sends the request with the current `IDS-SESSION-ID`.
 2. If the API returns **HTTP 401** (session expired), the connector **automatically re-authenticates** (calls the Informatica login API with the same credentials) and obtains a fresh session ID.
@@ -102,42 +102,42 @@ This happens inside the `B360Connection` — no user configuration is required. 
 ### GET — Read a master record
 
 ```xml
-<b360:generic-request config-ref="B360_Config"
+<b360:http-request config-ref="B360_Config"
     method="GET"
     path="/business-entity/public/api/v1/entity/Person/123456789">
     <b360:query-parameters>
         <b360:query-parameter key="_showContentMeta" value="true" />
     </b360:query-parameters>
-</b360:generic-request>
+</b360:http-request>
 ```
 
 ### POST — Create/submit a source record
 
 ```xml
-<b360:generic-request config-ref="B360_Config"
+<b360:http-request config-ref="B360_Config"
     method="POST"
     path="/business-entity/public/api/v1/entity/Person">
     <b360:query-parameters>
         <b360:query-parameter key="sourceSystem" value="CRM" />
     </b360:query-parameters>
     <b360:request-body><![CDATA[#[payload]]]></b360:request-body>
-</b360:generic-request>
+</b360:http-request>
 ```
 
 ### PUT — Update a source record (entity-xref)
 
 ```xml
-<b360:generic-request config-ref="B360_Config"
+<b360:http-request config-ref="B360_Config"
     method="PUT"
     path="#['/business-entity/public/api/v1/entity-xref/Person/' ++ vars.sourceSystem ++ '/' ++ vars.sourcePKey]">
     <b360:request-body><![CDATA[#[payload]]]></b360:request-body>
-</b360:generic-request>
+</b360:http-request>
 ```
 
 ### DELETE — Remove a source contribution
 
 ```xml
-<b360:generic-request config-ref="B360_Config"
+<b360:http-request config-ref="B360_Config"
     method="DELETE"
     path="#['/business-entity/public/api/v1/entity-xref/Person/' ++ vars.sourceSystem ++ '/' ++ vars.sourcePKey]" />
 ```
@@ -145,21 +145,21 @@ This happens inside the `B360Connection` — no user configuration is required. 
 ### Calling a non-standard endpoint (e.g. jobs API)
 
 ```xml
-<b360:generic-request config-ref="B360_Config"
+<b360:http-request config-ref="B360_Config"
     method="POST"
     path="/batch-job/public/api/v1/jobs/run">
     <b360:request-body><![CDATA[#[{
         "jobId": vars.jobId,
         "parameters": {}
     }]]]></b360:request-body>
-</b360:generic-request>
+</b360:http-request>
 ```
 
 ---
 
 ## DataWeave: inspecting the response
 
-After the Generic Request operation, the response is available as `payload` (body) and `attributes` (HTTP metadata).
+After the Http Request operation, the response is available as `payload` (body) and `attributes` (HTTP metadata).
 
 ### Check status and parse body
 
@@ -196,7 +196,7 @@ output application/json
 
 ## Common B360 REST API paths
 
-The following paths are relative to the B360 MDM base URL. Use them with the Generic Request operation when a dedicated operation is not available or when you need more control.
+The following paths are relative to the B360 MDM base URL. Use them with the Http Request operation when a dedicated operation is not available or when you need more control.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -209,11 +209,13 @@ The following paths are relative to the B360 MDM base URL. Use them with the Gen
 | DELETE | `/business-entity/public/api/v1/entity-xref/{entity}/{sourceSystem}/{sourcePKey}` | Delete a source record. |
 | GET | `/business-entity/public/api/v1/entity` | List business entities (connection validation endpoint). |
 | GET | `/metadata/api/v2/objects/tenantModel/datamodel` | Retrieve tenant datamodel (business entities, source systems, fields). |
+| GET | `/metadata/api/v2/objects/{objectName}` | Retrieve metadata for a specific business entity. |
+| GET | `/metadata/api/v2/objects/relationship` | Retrieve relationship metadata. |
 | GET | `/meta` | List business entities (metadata, alternative endpoint). |
 
 ---
 
-## When to use Generic Request vs. dedicated operations
+## When to use Http Request vs. dedicated operations
 
 | Use case | Recommendation |
 |----------|----------------|
@@ -221,10 +223,11 @@ The following paths are relative to the B360 MDM base URL. Use them with the Gen
 | Read a master record | Use **INFA MDM - Master Read** (entity dropdown, typed `MasterReadResponseAttributes`). |
 | Read a source record | Use **INFA MDM - Source Read** (entity/source system dropdowns, typed attributes). |
 | Submit source data | Use **INFA MDM - Source Submit** (entity/source system dropdowns, typed attributes). |
-| Any endpoint not covered above | Use **INFA MDM - Generic Request**. |
-| Need raw HTTP control (custom headers, inspect response headers, handle non-2xx yourself) | Use **INFA MDM - Generic Request**. |
-| Prototyping or debugging an API call | Use **INFA MDM - Generic Request**. |
-| Batch job triggers, task management, admin APIs | Use **INFA MDM - Generic Request**. |
+| Read metadata / data model | Use **INFA MDM - MetaData Read** (resource dropdown, typed attributes). |
+| Any endpoint not covered above | Use **INFA MDM - Http Request**. |
+| Need raw HTTP control (custom headers, inspect response headers, handle non-2xx yourself) | Use **INFA MDM - Http Request**. |
+| Prototyping or debugging an API call | Use **INFA MDM - Http Request**. |
+| Batch job triggers, task management, admin APIs | Use **INFA MDM - Http Request**. |
 
 ---
 

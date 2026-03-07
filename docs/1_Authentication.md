@@ -2,6 +2,8 @@
 
 **Source:** [Login - Platform REST API version 3 resources](https://docs.informatica.com/cloud-common-services/administrator/current-version/rest-api-reference/platform-rest-api-version-3-resources/login.html)
 
+**Further reading:** [Informatica Knowledge — 000212150](https://knowledge.informatica.com/s/article/000212150?language=en_US&type=external)
+
 **This connector uses Login API version 3** (`/saas/public/core/v3/login`).
 
 **Connector behavior:** This connector does not store the session ID in Object Store; the session is held in the connection instance and is refreshed when the connection is re-established. The connector does not call the logout resource; sessions end when the connection is disposed or when they expire on the server (e.g. after 30 minutes of inactivity).

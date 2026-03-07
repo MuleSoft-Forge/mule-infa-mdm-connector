@@ -34,6 +34,12 @@ public final class B360Endpoints {
      */
     public static final String DATAMODEL = "/metadata/api/v2/objects/tenantModel/datamodel";
 
+    /** Metadata v2 objects base: used for entity blueprint and relationship metadata. */
+    public static final String METADATA_OBJECTS = "/metadata/api/v2/objects";
+
+    /** Metadata v2 relationship: returns relationship metadata (hierarchy &amp; graph). */
+    public static final String METADATA_RELATIONSHIP = "/metadata/api/v2/objects/relationship";
+
     /**
      * Source record (entity-xref) API: GET/PUT/PATCH/DELETE with path params
      * {@code /{businessEntity}/{sourceSystem}/{sourcePKey}}.
