@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import java.io.InputStream;
 import java.net.SocketTimeoutException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 /**
  * Encapsulates the B360 session and HTTP client. Operations must not access the HttpClient directly.
@@ -49,10 +50,25 @@ public final class B360Connection {
     /**
      * Callback that performs re-authentication and returns a fresh session ID.
      * Supplied by the connection provider; null for Passthrough (no refresh possible).
+     * Use {@link #refreshAsync()} from async paths to avoid blocking the HTTP worker thread.
      */
     @FunctionalInterface
     public interface SessionRefresher {
         String refresh() throws ConnectionException;
+
+        /**
+         * Async re-authentication. Default runs {@link #refresh()} on another thread.
+         * Override to use sendAsync so no thread is blocked (recommended for connection providers).
+         */
+        default CompletableFuture<String> refreshAsync() {
+            return CompletableFuture.supplyAsync(() -> {
+                try {
+                    return refresh();
+                } catch (ConnectionException e) {
+                    throw new CompletionException(e);
+                }
+            });
+        }
     }
 
     public B360Connection(String sessionId, String baseApiUrl, HttpClient httpClient,
@@ -112,21 +128,15 @@ public final class B360Connection {
                     if (response.getStatusCode() == 401 && sessionRefresher != null) {
                         LOGGER.info("HTTP 401 on {}; attempting re-authentication.", requestUri);
                         consumeBody(response);
-                        try {
-                            String newSession = sessionRefresher.refresh();
-                            sessionId = newSession;
-                        } catch (Exception refreshEx) {
-                            LOGGER.warn("Re-authentication failed: {}", refreshEx.getMessage());
-                            callback.error(new ConnectionException(
-                                    buildErrorMessage(401, response.getReasonPhrase(), null, requestUri)
-                                            + " Re-authentication also failed: " + refreshEx.getMessage()));
-                            return;
-                        }
-                        HttpRequest retryRequest = rebuildRequestWithNewSession(request);
-                        httpClient.sendAsync(retryRequest)
-                                .whenComplete((retryResponse, retryThrowable) -> {
-                                    if (retryThrowable != null) {
-                                        callback.error(enrichWithUri(retryThrowable, requestUri));
+                        sessionRefresher.refreshAsync()
+                                .thenCompose(newSession -> {
+                                    sessionId = newSession;
+                                    return httpClient.sendAsync(rebuildRequestWithNewSession(request));
+                                })
+                                .whenComplete((retryResponse, retryEx) -> {
+                                    if (retryEx != null) {
+                                        Throwable cause = retryEx instanceof CompletionException ? retryEx.getCause() : retryEx;
+                                        callback.error(cause instanceof ConnectionException ? cause : enrichWithUri(retryEx, requestUri));
                                         return;
                                     }
                                     completeAsyncCallback(retryResponse, requestUri, callback);
@@ -180,18 +190,11 @@ public final class B360Connection {
             String requestUri = request.getUri() != null ? request.getUri().toString() : null;
             LOGGER.info("HTTP 401 on {}; attempting re-authentication.", requestUri);
             consumeBody(response);
-            try {
-                String newSession = sessionRefresher.refresh();
-                sessionId = newSession;
-            } catch (Exception refreshEx) {
-                LOGGER.warn("Re-authentication failed: {}", refreshEx.getMessage());
-                CompletableFuture<HttpResponse> failed = new CompletableFuture<>();
-                failed.completeExceptionally(new ConnectionException(
-                        "HTTP 401 Unauthorized. Re-authentication failed: " + refreshEx.getMessage()));
-                return failed;
-            }
-            HttpRequest retryRequest = rebuildRequestWithNewSession(request);
-            return httpClient.sendAsync(retryRequest);
+            return sessionRefresher.refreshAsync()
+                    .thenCompose(newSession -> {
+                        sessionId = newSession;
+                        return httpClient.sendAsync(rebuildRequestWithNewSession(request));
+                    });
         });
     }
 

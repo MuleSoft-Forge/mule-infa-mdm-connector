@@ -35,6 +35,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.mule.runtime.api.meta.ExpressionSupport.NOT_SUPPORTED;
 import static org.mule.runtime.api.meta.ExpressionSupport.SUPPORTED;
@@ -82,10 +83,18 @@ public class B360BasicAuthConnectionProvider extends BaseB360ConnectionProvider 
     @Override
     public B360Connection connect() throws ConnectionException {
         LoginResult login = performLogin();
-        B360Connection.SessionRefresher refresher = () -> {
-            LOGGER.info("Re-authenticating with Informatica Cloud (session expired).");
-            LoginResult fresh = performLogin();
-            return fresh.sessionId;
+        B360Connection.SessionRefresher refresher = new B360Connection.SessionRefresher() {
+            @Override
+            public String refresh() throws ConnectionException {
+                LOGGER.info("Re-authenticating with Informatica Cloud (session expired).");
+                return performLogin().sessionId;
+            }
+
+            @Override
+            public CompletableFuture<String> refreshAsync() {
+                LOGGER.info("Re-authenticating with Informatica Cloud (session expired).");
+                return performLoginAsync();
+            }
         };
         return new B360Connection(login.sessionId, login.baseApiUrl, getHttpClient(), isBypassMetadataCache(), refresher);
     }
@@ -154,6 +163,65 @@ public class B360BasicAuthConnectionProvider extends BaseB360ConnectionProvider 
         } catch (Exception e) {
             String message = B360ConnectionErrorMessages.forException(e);
             throw new ConnectionException(message, e);
+        }
+    }
+
+    /**
+     * Performs login asynchronously using sendAsync. Used by refreshAsync() so the HTTP worker
+     * thread is never blocked during re-authentication on 401.
+     */
+    private CompletableFuture<String> performLoginAsync() {
+        HttpRequest request = buildLoginRequest();
+        return getHttpClient().sendAsync(request)
+                .thenApply(response -> {
+                    int status = response.getStatusCode();
+                    String responseBody = null;
+                    if (response.getEntity() != null && response.getEntity().getContent() != null) {
+                        responseBody = B360Utils.readStreamAsString(response.getEntity().getContent());
+                    }
+                    if (status != 200) {
+                        String message = B360ConnectionErrorMessages.forLoginFailure(
+                                status, response.getReasonPhrase(), responseBody);
+                        throw new java.util.concurrent.CompletionException(new ConnectionException(message));
+                    }
+                    if (responseBody == null || responseBody.isEmpty()) {
+                        throw new java.util.concurrent.CompletionException(
+                                new ConnectionException("Login response missing body"));
+                    }
+                    try {
+                        JsonNode root = B360Utils.OBJECT_MAPPER.readTree(responseBody);
+                        String sessionId = root.has("userInfo") && root.get("userInfo").has("sessionId")
+                                ? root.get("userInfo").get("sessionId").asText()
+                                : (root.has("sessionId") ? root.get("sessionId").asText() : "");
+                        if (sessionId == null || sessionId.isEmpty()) {
+                            throw new java.util.concurrent.CompletionException(
+                                    new ConnectionException("Login response missing sessionId"));
+                        }
+                        return sessionId;
+                    } catch (Exception e) {
+                        throw new java.util.concurrent.CompletionException(
+                                e instanceof ConnectionException ? e : new ConnectionException(
+                                        B360ConnectionErrorMessages.forException(e), e));
+                    }
+                });
+    }
+
+    private HttpRequest buildLoginRequest() {
+        String loginUrl = buildLoginUrl(baseUrl);
+        Map<String, String> loginBody = new LinkedHashMap<>();
+        loginBody.put("username", username != null ? username : "");
+        loginBody.put("password", password != null ? password : "");
+        try {
+            String body = B360Utils.OBJECT_MAPPER.writeValueAsString(loginBody);
+            return HttpRequest.builder()
+                    .uri(loginUrl)
+                    .method(HttpConstants.Method.POST)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json")
+                    .entity(new InputStreamHttpEntity(new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))))
+                    .build();
+        } catch (JsonProcessingException e) {
+            throw new java.util.concurrent.CompletionException(new ConnectionException("Failed to build login request body", e));
         }
     }
 

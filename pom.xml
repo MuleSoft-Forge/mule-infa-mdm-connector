@@ -13,7 +13,7 @@
     <groupId>com.mulesoftforge</groupId>
     <artifactId>mule-infa-b360-connector</artifactId>
     <packaging>mule-extension</packaging>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
 
     <name>Informatica MDM - Business 360</name>
     <description>Mule 4 connector for Informatica MDM Business 360 REST API</description>
